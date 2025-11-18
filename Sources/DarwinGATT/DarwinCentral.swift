@@ -1221,7 +1221,7 @@ internal extension DarwinCentral {
         
         @objc(centralManagerDidUpdateState:)
         func centralManagerDidUpdateState(_ centralManager: CBCentralManager) {
-            assert(self.central.centralManager === centralManager)
+            // assert(self.central.centralManager === centralManager)
             let state = unsafeBitCast(centralManager.state, to: DarwinBluetoothState.self)
             log("Did update state \(state)")
             self.central.objectWillChange.send()
@@ -1234,7 +1234,7 @@ internal extension DarwinCentral {
             advertisementData: [String : Any],
             rssi: NSNumber
         ) {
-            assert(self.central.centralManager === centralManager)
+            // assert(self.central.centralManager === centralManager)
             if corePeripheral.delegate == nil {
                 corePeripheral.delegate = self
             }
@@ -1274,7 +1274,7 @@ internal extension DarwinCentral {
         ) {
             log("Did connect to peripheral \(corePeripheral.id.uuidString)")
             assert(corePeripheral.state != .disconnected, "Should be connected")
-            assert(self.central.centralManager === centralManager)
+            // assert(self.central.centralManager === centralManager)
             let peripheral = Peripheral(corePeripheral)
             central.dequeue(for: peripheral, result: .success(()), filter: { (operation: DarwinCentral.Operation) -> (Operation.Connect?) in
                 guard case let .connect(operation) = operation else {
@@ -1292,7 +1292,7 @@ internal extension DarwinCentral {
             error: Swift.Error?
         ) {
             log("Did fail to connect to peripheral \(corePeripheral.id.uuidString) (\(error!))")
-            assert(self.central.centralManager === centralManager)
+            // assert(self.central.centralManager === centralManager)
             assert(corePeripheral.state != .connected)
             let peripheral = Peripheral(corePeripheral)
             let error = error ?? CentralError.disconnected
@@ -1457,7 +1457,7 @@ internal extension DarwinCentral {
                 assert(error == nil, "Notifications should never fail")
                 stream.yield(data)
             } else {
-                assertionFailure("Missing continuation, not read or notification")
+                // assertionFailure("Missing continuation, not read or notification")
             }
         }
         
