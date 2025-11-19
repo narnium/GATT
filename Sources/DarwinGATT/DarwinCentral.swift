@@ -48,7 +48,9 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
-    private var centralManager: CBCentralManager!
+    public private(set) var centralManager: CBCentralManager!
+    
+    public let centralStateStream: AsyncStream<DarwinBluetoothState>
     
     private var delegate: Delegate!
     
@@ -68,8 +70,15 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     public init(
         options: Options = Options()
     ) {
+        let (stream, bluetoothStateContinuation) = AsyncStream<DarwinBluetoothState>.makeStream()
+        centralStateStream = stream
         self.options = options
-        self.delegate = options.restoreIdentifier == nil ? Delegate(self) : RestorableDelegate(self)
+        self.delegate =
+        options.restoreIdentifier == nil
+        ?
+        Delegate(self, bluetoothStateContinuation: bluetoothStateContinuation)
+        :
+        RestorableDelegate(self, bluetoothStateContinuation: bluetoothStateContinuation)
         self.centralManager = CBCentralManager(
             delegate: self.delegate,
             queue: queue,
@@ -102,7 +111,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
                 self.stopScan()
             }
             Task {
-                await self.disconnectAll()
+//                await self.disconnectAll()
                 self.async { [unowned self] in
                     // queue scan operation
                     let operation = Operation.Scan(
@@ -148,13 +157,38 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
-    public func disconnect(_ peripheral: Peripheral) async {
-        try? await queue(for: peripheral) { continuation in
-            Operation.Disconnect(
-                peripheral: peripheral,
-                continuation: continuation
-            )
+    public func cancelPendingConnection(_ peripheral: Peripheral) {
+        if let cbPeripheral = self.cache.peripherals[peripheral] {
+            centralManager.cancelPeripheralConnection(cbPeripheral)
         }
+    }
+    
+    public func disconnect(_ peripheral: Peripheral) async  {
+        try? await disconnectWithThow(peripheral)
+    }
+    
+    public enum DisconnectError: Error {
+        case timedOut
+        case other(any Error)
+    }
+    
+    public func disconnectWithThow(
+        _ peripheral: Peripheral,
+//        timeout: TimeInterval = 2
+    ) async throws(DisconnectError) {
+        do {
+//            let deadline = Date().addingTimeInterval(timeout)
+            try await queue(for: peripheral) { continuation in
+                Operation.Disconnect(
+                    peripheral: peripheral,
+                    continuation: continuation,
+//                    deadline: deadline
+                )
+            }
+        } catch {
+            throw .other(error)
+        }
+        
     }
     
     public func disconnectAll() async {
@@ -438,9 +472,13 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
         // get MTU
         let rawValue = peripheralObject.maximumWriteValueLength(for: .withoutResponse) + 3
-        assert(peripheralObject.mtuLength.intValue >= rawValue)
+        if peripheralObject.mtuLength.intValue < rawValue {
+            log?("_maximumTransmissionUnit: MTU too small (\(peripheralObject.mtuLength.intValue) < \(rawValue))")
+        }
+//        assert(peripheralObject.mtuLength.intValue >= rawValue)
         guard let mtu = MaximumTransmissionUnit(rawValue: UInt16(rawValue)) else {
-            assertionFailure("Invalid MTU \(rawValue)")
+            log?("_maximumTransmissionUnit: Invalid MTU \(rawValue)")
+//            assertionFailure("Invalid MTU \(rawValue)")
             return .default
         }
         return mtu
@@ -692,6 +730,7 @@ internal extension DarwinCentral.Operation {
         let peripheral: DarwinCentral.Peripheral
         let continuation: PeripheralContinuation<(), Error>
         var operation: DarwinCentral.Operation { .disconnect(self) }
+//        let deadline: Date
     }
     
     struct DiscoverServices: DarwinCentralOperation {
@@ -956,7 +995,10 @@ internal extension DarwinCentral {
         guard let characteristicObject = validateCharacteristic(operation.characteristic, for: operation.continuation) else {
             return false
         }
-        assert(operation.withResponse || peripheralObject.canSendWriteWithoutResponse, "Cannot write without response")
+        if operation.withResponse == false && peripheralObject.canSendWriteWithoutResponse == false {
+            log?("Peripheral \(operation.characteristic.peripheral) execute Operation.WriteCharacteristics, characteristic \(operation.characteristic.uuid). Cannot write without response")
+        }
+//        assert(operation.withResponse || peripheralObject.canSendWriteWithoutResponse, "Cannot write without response")
         // calls `peripheral:didWriteValueForCharacteristic:error:` only
         // if you specified the write type as `.withResponse`.
         let writeType: CBCharacteristicWriteType = operation.withResponse ? .withResponse : .withoutResponse
@@ -1133,7 +1175,10 @@ private extension DarwinCentral {
             continuation.resume(throwing: CentralError.unknownPeripheral)
             return nil
         }
-        assert(peripheralObject.delegate != nil)
+        if peripheralObject.delegate == nil {
+            log?("validatePeripheral Peripheral delegate is nil")
+        }
+//        assert(peripheralObject.delegate != nil)
         return peripheralObject
     }
     
@@ -1185,13 +1230,51 @@ private extension DarwinCentral {
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 internal extension DarwinCentral {
     
+    public func retrieveAndCachePeripherals(withIdentifiers: Set<UUID>) async {
+        await withUnsafeContinuation { cont in
+            self.async {
+                withIdentifiers
+                let retrievedPeripherals = self.centralManager.retrievePeripherals(
+                    withIdentifiers: Array(withIdentifiers)
+                )
+                for peripheralObject in retrievedPeripherals {
+                    peripheralObject.delegate = self.delegate
+                    self.cache.peripherals[Peripheral(peripheralObject)] = peripheralObject
+                }
+                cont.resume()
+            }
+        }
+    }
+    
+    public func retrieveAndCacheConnectedPeripherals(withServices: Set<BluetoothUUID>) async {
+        await withUnsafeContinuation { cont in
+            self.async {
+                let retrievedPeripherals = self.centralManager.retrieveConnectedPeripherals(
+                    withServices: withServices.map { CBUUID($0) }
+                )
+                for peripheralObject in retrievedPeripherals {
+                    peripheralObject.delegate = self.delegate
+                    self.cache.peripherals[Peripheral(peripheralObject)] = peripheralObject
+                }
+                cont.resume()
+            }
+        }
+    }
+    
+//    public func retrieveAndCacheConnectedPeripherals() async -> [Peripheral] {
+//        
+//    }
+    
     @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
     @objc(GATTAsyncCentralManagerRestorableDelegate)
     class RestorableDelegate: Delegate {
         
         @objc
         func centralManager(_ centralManager: CBCentralManager, willRestoreState state: [String : Any]) {
-            assert(self.central.centralManager === centralManager)
+            if self.central.centralManager !== centralManager {
+                log("willRestoreState:: self.central.centralManager !== centralManager")
+            }
+//            assert(self.central.centralManager === centralManager)
             log("Will restore state: \(NSDictionary(dictionary: state).description)")
             // An array of peripherals for use when restoring the state of a central manager.
             if let peripherals = state[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
@@ -1207,9 +1290,14 @@ internal extension DarwinCentral {
     class Delegate: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         
         private(set) unowned var central: DarwinCentral
+        let bluetoothStateContinuation: AsyncStream<DarwinBluetoothState>.Continuation
         
-        fileprivate init(_ central: DarwinCentral) {
+        fileprivate init(
+            _ central: DarwinCentral,
+            bluetoothStateContinuation: AsyncStream<DarwinBluetoothState>.Continuation
+        ) {
             self.central = central
+            self.bluetoothStateContinuation = bluetoothStateContinuation
             super.init()
         }
         
@@ -1221,8 +1309,12 @@ internal extension DarwinCentral {
         
         @objc(centralManagerDidUpdateState:)
         func centralManagerDidUpdateState(_ centralManager: CBCentralManager) {
+            if self.central.centralManager !== centralManager {
+                log("centralManagerDidUpdateState:: self.central.centralManager !== centralManager")
+            }
             // assert(self.central.centralManager === centralManager)
             let state = unsafeBitCast(centralManager.state, to: DarwinBluetoothState.self)
+            bluetoothStateContinuation.yield(state)
             log("Did update state \(state)")
             self.central.objectWillChange.send()
         }
@@ -1234,6 +1326,9 @@ internal extension DarwinCentral {
             advertisementData: [String : Any],
             rssi: NSNumber
         ) {
+            if self.central.centralManager !== centralManager {
+                log("didDiscoverPeripheral:: self.central.centralManager !== centralManager")
+            }
             // assert(self.central.centralManager === centralManager)
             if corePeripheral.delegate == nil {
                 corePeripheral.delegate = self
@@ -1251,7 +1346,8 @@ internal extension DarwinCentral {
             self.central.cache.peripherals[peripheral] = corePeripheral
             // yield value to stream
             guard let operation = self.central.continuation.scan else {
-                assertionFailure("Not currently scanning")
+                log("didDiscoverPeripheral:: recieved:\(corePeripheral.id.uuidString) but Not currently scanning")
+//                assertionFailure("Not currently scanning")
                 return
             }
             operation.continuation.yield(scanResult)
@@ -1273,7 +1369,15 @@ internal extension DarwinCentral {
             didConnect corePeripheral: CBPeripheral
         ) {
             log("Did connect to peripheral \(corePeripheral.id.uuidString)")
-            assert(corePeripheral.state != .disconnected, "Should be connected")
+            if corePeripheral.state != .connected {
+                log("didConnectPeripheral:: corePeripheral.state != .disconnected, Should be `.connected` (aka 2) \(corePeripheral.id.uuidString) but in state: \(corePeripheral.state)")
+            }
+            
+            if self.central.centralManager !== centralManager {
+                log("didConnectPeripheral:: self.central.centralManager !== centralManager")
+            }
+
+//            assert(corePeripheral.state != .disconnected, "Should be connected")
             // assert(self.central.centralManager === centralManager)
             let peripheral = Peripheral(corePeripheral)
             central.dequeue(for: peripheral, result: .success(()), filter: { (operation: DarwinCentral.Operation) -> (Operation.Connect?) in
@@ -1292,8 +1396,16 @@ internal extension DarwinCentral {
             error: Swift.Error?
         ) {
             log("Did fail to connect to peripheral \(corePeripheral.id.uuidString) (\(error!))")
+            
+            if corePeripheral.state == .connected {
+                log("didConnectPeripheral:: \(corePeripheral.id.uuidString) Should not be `.connected` (aka 2)  but in state: \(corePeripheral.state)")
+            }
+            
+            if self.central.centralManager !== centralManager {
+                log("didConnectPeripheral:: self.central.centralManager !== centralManager")
+            }
             // assert(self.central.centralManager === centralManager)
-            assert(corePeripheral.state != .connected)
+//            assert(corePeripheral.state != .connected)
             let peripheral = Peripheral(corePeripheral)
             let error = error ?? CentralError.disconnected
             central.dequeue(for: peripheral, result: .failure(error), filter: { (operation: DarwinCentral.Operation) -> (Operation.Connect?) in
@@ -1434,7 +1546,8 @@ internal extension DarwinCentral {
             )
             let data = characteristicObject.value ?? Data()
             guard let context = self.central.continuation.peripherals[characteristic.peripheral] else {
-                assertionFailure("Missing context")
+                log("Peripheral \(peripheralObject.id.uuidString) missing continuation context (\(error))")
+//                assertionFailure("Missing context")
                 return
             }
             // either read operation or notification
@@ -1451,12 +1564,15 @@ internal extension DarwinCentral {
                 context.operations.pop({ _ in }) // remove first
             } else if characteristicObject.isNotifying {
                 guard let stream = context.notificationStream[characteristic.id] else {
-                    assertionFailure("Missing notification stream")
+                    log("Peripheral \(peripheralObject.id.uuidString) Missing notification stream (\(error))")
+//                    assertionFailure("Missing notification stream")
                     return
                 }
-                assert(error == nil, "Notifications should never fail")
+                log("Peripheral \(peripheralObject.id.uuidString) Missing notification stream (\(error))")
+//                assert(error == nil, "Notifications should never fail")
                 stream.yield(data)
             } else {
+                log("Peripheral \(peripheralObject.id.uuidString) Missing notification stream (\(error))")
                 // assertionFailure("Missing continuation, not read or notification")
             }
         }
@@ -1487,7 +1603,10 @@ internal extension DarwinCentral {
                 guard case let .writeCharacteristic(operation) = operation else {
                     return nil
                 }
-                assert(operation.withResponse)
+                if operation.withResponse == false {
+                    log("Peripheral \(peripheralObject.id.uuidString) didWriteValueFor should only be called for write with response writing characteristic (\(error))")
+                }
+//                assert(operation.withResponse)
                 return operation
             })
         }
@@ -1518,7 +1637,10 @@ internal extension DarwinCentral {
                 guard case let .setNotification(notificationOperation) = operation else {
                     return nil
                 }
-                assert(characteristicObject.isNotifying == notificationOperation.isEnabled)
+                if characteristicObject.isNotifying != notificationOperation.isEnabled {
+                    log("Peripheral \(peripheralObject.id.uuidString) didUpdateNotificationStateFor characteristicObject.isNotifying:\(characteristicObject.isNotifying) mismatches with notificationOperation.isEnabled:\(notificationOperation.isEnabled)  for charaID:\(characteristicObject.uuid.uuidString)")
+                }
+//                assert(characteristicObject.isNotifying == notificationOperation.isEnabled)
                 return notificationOperation
             })
         }
@@ -1547,18 +1669,21 @@ internal extension DarwinCentral {
             }
             let peripheral = Peripheral(peripheralObject)
             guard let context = self.central.continuation.peripherals[peripheral] else {
-                assertionFailure("Missing context")
+                log("Peripheral \(peripheralObject.id.uuidString) didReadRSSI Missing context \(rssiObject.description)")
+//                assertionFailure("Missing context")
                 return
             }
             guard let operation = context.readRSSI else {
-                assertionFailure("Invalid continuation")
+                log("Peripheral \(peripheralObject.id.uuidString) didReadRSSI Invalid continuation \(rssiObject.description)")
+//                assertionFailure("Invalid continuation")
                 return
             }
             if let error = error {
                 operation.continuation.resume(throwing: error)
             } else {
                 guard let rssi = Bluetooth.RSSI(rawValue: rssiObject.int8Value) else {
-                    assertionFailure("Invalid RSSI \(rssiObject)")
+                    log("Peripheral \(peripheralObject.id.uuidString) didReadRSSI Invalid RSSI \(rssiObject.description)")
+//                    assertionFailure("Invalid RSSI \(rssiObject)")
                     operation.continuation.resume(returning: RSSI(rawValue: -127)!)
                     return
                 }
