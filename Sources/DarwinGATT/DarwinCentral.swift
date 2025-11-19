@@ -21,6 +21,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     
     public let options: Options
     
+    nonisolated(nonsending)
     public var state: DarwinBluetoothState {
         get async {
             return await withUnsafeContinuation { [unowned self] continuation in
@@ -33,6 +34,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     }
     
     /// Currently scanned devices, or restored devices.
+    nonisolated(nonsending)
     public var peripherals: [Peripheral: Bool] {
         get async {
             return await withUnsafeContinuation { [unowned self] continuation in
@@ -89,6 +91,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     // MARK: - Methods
     
     /// Scans for peripherals that are advertising services.
+    nonisolated(nonsending)
     public func scan(
         filterDuplicates: Bool = true
     ) async throws -> AsyncCentralScan<DarwinCentral> {
@@ -134,6 +137,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         self.continuation.scan = nil
     }
     
+    nonisolated(nonsending)
     public func connect(
         to peripheral: Peripheral
     ) async throws {
@@ -144,9 +148,10 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     /// - Parameter peripheral: The peripheral to which the central is attempting to connect.
     /// - Parameter options: A dictionary to customize the behavior of the connection.
     /// For available options, see [Peripheral Connection Options](apple-reference-documentation://ts1667676).
+    nonisolated(nonsending)
     public func connect(
         to peripheral: Peripheral,
-        options: [String: Any]?
+        options: [String: any Sendable]?
     ) async throws {
         try await queue(for: peripheral) { continuation in
             Operation.Connect(
@@ -163,6 +168,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func disconnect(_ peripheral: Peripheral) async  {
         try? await disconnectWithThow(peripheral)
     }
@@ -172,6 +178,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         case other(any Error)
     }
     
+    nonisolated(nonsending)
     public func disconnectWithThow(
         _ peripheral: Peripheral,
 //        timeout: TimeInterval = 2
@@ -191,6 +198,8 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         
     }
     
+    
+    nonisolated(nonsending)
     public func disconnectAll() async {
         let connected = await self.peripherals
             .filter { $0.value }
@@ -200,6 +209,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func discoverServices(
         _ services: Set<BluetoothUUID> = [],
         for peripheral: Peripheral
@@ -213,6 +223,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func discoverIncludedServices(
         _ services: Set<BluetoothUUID> = [],
         for service: DarwinCentral.Service
@@ -226,6 +237,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func discoverCharacteristics(
         _ characteristics: Set<BluetoothUUID> = [],
         for service: DarwinCentral.Service
@@ -239,6 +251,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func readValue(
         for characteristic: DarwinCentral.Characteristic
     ) async throws -> Data {
@@ -250,6 +263,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func writeValue(
         _ data: Data,
         for characteristic: DarwinCentral.Characteristic,
@@ -261,6 +275,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         try await self.write(data, withResponse: withResponse, for: characteristic)
     }
     
+    nonisolated(nonsending)
     public func discoverDescriptors(
         for characteristic: DarwinCentral.Characteristic
     ) async throws -> [DarwinCentral.Descriptor] {
@@ -272,6 +287,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func readValue(
         for descriptor: DarwinCentral.Descriptor
     ) async throws -> Data {
@@ -283,6 +299,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func writeValue(
         _ data: Data,
         for descriptor: DarwinCentral.Descriptor
@@ -296,6 +313,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func notify(
         for characteristic: DarwinCentral.Characteristic
     ) async throws -> AsyncCentralNotifications<DarwinCentral> {
@@ -327,6 +345,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         })
     }
     
+    nonisolated(nonsending)
     public func maximumTransmissionUnit(for peripheral: Peripheral) async throws -> MaximumTransmissionUnit {
         self.log?("Will read MTU for \(peripheral)")
         return try await withThrowingContinuation(for: peripheral) { [weak self] continuation in
@@ -343,6 +362,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     public func rssi(for peripheral: Peripheral) async throws -> RSSI {
         try await queue(for: peripheral) { continuation in
             Operation.ReadRSSI(
@@ -356,6 +376,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     ///
     /// A peripheral may have two different name types: one that the device advertises and another that the device publishes in its database as its Bluetooth low energy Generic Access Profile (GAP) device name.
     /// If a peripheral has both types of names, this property returns its GAP device name.
+    nonisolated(nonsending)
     public func name(for peripheral: Peripheral) async throws -> String? {
         return try await withThrowingContinuation(for: peripheral) { [weak self] continuation in
             guard let self = self else { return }
@@ -378,10 +399,11 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         queue.async(execute: body)
     }
     
+    nonisolated(nonsending)
     private func queue<Operation>(
         for peripheral: Peripheral,
         function: String = #function,
-        _ operation: (PeripheralContinuation<Operation.Success, Error>) -> Operation
+        _ operation: @Sendable (PeripheralContinuation<Operation.Success, Error>) -> Operation
     ) async throws -> Operation.Success where Operation: DarwinCentralOperation {
         #if DEBUG
         log?("Queue \(function) for peripheral \(peripheral)")
@@ -426,6 +448,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     private func write(
         _ data: Data,
         withResponse: Bool,
@@ -441,6 +464,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     private func waitUntilCanSendWriteWithoutResponse(
         for peripheral: Peripheral
     ) async throws {
@@ -452,6 +476,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         }
     }
     
+    nonisolated(nonsending)
     private func setNotification(
         _ isEnabled: Bool,
         for characteristic: Characteristic
@@ -1230,6 +1255,7 @@ private extension DarwinCentral {
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 internal extension DarwinCentral {
     
+    nonisolated(nonsending)
     public func retrieveAndCachePeripherals(withIdentifiers: Set<UUID>) async {
         await withUnsafeContinuation { cont in
             self.async {
@@ -1246,6 +1272,7 @@ internal extension DarwinCentral {
         }
     }
     
+    nonisolated(nonsending)
     public func retrieveAndCacheConnectedPeripherals(withServices: Set<BluetoothUUID>) async {
         await withUnsafeContinuation { cont in
             self.async {
@@ -1260,10 +1287,6 @@ internal extension DarwinCentral {
             }
         }
     }
-    
-//    public func retrieveAndCacheConnectedPeripherals() async -> [Peripheral] {
-//        
-//    }
     
     @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
     @objc(GATTAsyncCentralManagerRestorableDelegate)

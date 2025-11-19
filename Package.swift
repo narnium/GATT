@@ -67,7 +67,7 @@ var package = Package(
                     condition: .when(platforms: [.macOS])
                 )
             ],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "GATTTests",
@@ -93,7 +93,7 @@ var package = Package(
                     condition: .when(platforms: [.macOS, .linux])
                 )
             ],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )

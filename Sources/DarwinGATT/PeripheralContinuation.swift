@@ -12,7 +12,7 @@ import GATT
 
 #if DEBUG
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-internal struct PeripheralContinuation<T, E> where T: Sendable, E: Error {
+internal struct PeripheralContinuation<T, E>: Sendable where T: Sendable, E: Error {
     
     private let function: String
     
@@ -58,10 +58,11 @@ extension PeripheralContinuation where T == Void {
 }
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+nonisolated(nonsending)
 internal func withContinuation<T>(
     for peripheral: DarwinCentral.Peripheral,
     function: String = #function,
-    _ body: (PeripheralContinuation<T, Never>) -> Void
+    _ body: @Sendable (PeripheralContinuation<T, Never>) -> Void
 ) async -> T {
     return await withUnsafeContinuation {
         body(PeripheralContinuation(continuation: $0, function: function, peripheral: peripheral))
@@ -69,10 +70,11 @@ internal func withContinuation<T>(
 }
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+nonisolated(nonsending)
 internal func withThrowingContinuation<T>(
     for peripheral: DarwinCentral.Peripheral,
     function: String = #function,
-    _ body: (PeripheralContinuation<T, Swift.Error>) -> Void
+    _ body: @Sendable (PeripheralContinuation<T, Swift.Error>) -> Void
 ) async throws -> T {
     return try await withUnsafeThrowingContinuation {
         body(PeripheralContinuation(continuation: $0, function: function, peripheral: peripheral))
@@ -84,20 +86,22 @@ internal typealias PeripheralContinuation<T, E> = CheckedContinuation<T, E> wher
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 @inline(__always)
+nonisolated(nonsending)
 internal func withContinuation<T>(
     for peripheral: DarwinCentral.Peripheral,
     function: String = #function,
-    _ body: (CheckedContinuation<T, Never>) -> Void
+    _ body: @Sendable  (CheckedContinuation<T, Never>) -> Void
 ) async -> T {
     return await withCheckedContinuation(function: function, body)
 }
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 @inline(__always)
+nonisolated(nonsending)
 internal func withThrowingContinuation<T>(
     for peripheral: DarwinCentral.Peripheral,
     function: String = #function,
-    _ body: (CheckedContinuation<T, Swift.Error>) -> Void
+    _ body: @Sendable  (CheckedContinuation<T, Swift.Error>) -> Void
 ) async throws -> T {
     return try await withCheckedThrowingContinuation(function: function, body)
 }

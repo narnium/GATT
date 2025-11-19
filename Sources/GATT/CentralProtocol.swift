@@ -30,41 +30,50 @@ public protocol CentralManager: AnyObject {
     var log: (@Sendable (String) -> ())? { get set }
     
     /// Currently scanned devices, or restored devices.
+    nonisolated(nonsending)
     var peripherals: [Peripheral: Bool] { get async }
     
     /// Scans for peripherals that are advertising services.
+    nonisolated(nonsending)
     func scan(filterDuplicates: Bool) async throws -> AsyncCentralScan<Self>
     
     /// Disconnected peripheral callback
     //var didDisconnect: AsyncStream<Peripheral> { get }
     
     /// Connect to the specified device
+    nonisolated(nonsending)
     func connect(to peripheral: Peripheral) async throws
     
     /// Disconnect the specified device.
+    nonisolated(nonsending)
     func disconnect(_ peripheral: Peripheral) async
     
     /// Disconnect all connected devices.
+    nonisolated(nonsending)
     func disconnectAll() async
     
     /// Discover Services
+    nonisolated(nonsending)
     func discoverServices(
         _ services: Set<BluetoothUUID>,
         for peripheral: Peripheral
     ) async throws -> [Service<Peripheral, AttributeID>]
     
     /// Discover Characteristics for service
+    nonisolated(nonsending)
     func discoverCharacteristics(
         _ characteristics: Set<BluetoothUUID>,
         for service: Service<Peripheral, AttributeID>
     ) async throws -> [Characteristic<Peripheral, AttributeID>]
     
     /// Read Characteristic Value
+    nonisolated(nonsending)
     func readValue(
         for characteristic: Characteristic<Peripheral, AttributeID>
     ) async throws -> Data
     
     /// Write Characteristic Value
+    nonisolated(nonsending)
     func writeValue(
         _ data: Data,
         for characteristic: Characteristic<Peripheral, AttributeID>,
@@ -72,22 +81,26 @@ public protocol CentralManager: AnyObject {
     ) async throws
     
     /// Discover descriptors
+    nonisolated(nonsending)
     func discoverDescriptors(
         for characteristic: Characteristic<Peripheral, AttributeID>
     ) async throws -> [Descriptor<Peripheral, AttributeID>]
     
     /// Read descriptor
+    nonisolated(nonsending)
     func readValue(
         for descriptor: Descriptor<Peripheral, AttributeID>
     ) async throws -> Data
     
     /// Write descriptor
+    nonisolated(nonsending)
     func writeValue(
         _ data: Data,
         for descriptor: Descriptor<Peripheral, AttributeID>
     ) async throws
     
     /// Start Notifications
+    nonisolated(nonsending)
     func notify(
         for characteristic: Characteristic<Peripheral, AttributeID>
     ) async throws -> AsyncCentralNotifications<Self>

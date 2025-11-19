@@ -47,6 +47,7 @@ public struct AsyncCentralScan <Central: CentralManager>: AsyncSequence, Sendabl
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 public extension AsyncCentralScan {
     
+    nonisolated(nonsending)
     func first() async throws -> Element? {
         for try await element in self {
             self.stop()
