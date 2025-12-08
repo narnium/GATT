@@ -164,6 +164,7 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     
     public func cancelPendingConnection(_ peripheral: Peripheral) {
         if let cbPeripheral = self.cache.peripherals[peripheral] {
+            //TODO maybe check if disconnected
             centralManager.cancelPeripheralConnection(cbPeripheral)
         }
     }
@@ -317,32 +318,40 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
     public func notify(
         for characteristic: DarwinCentral.Characteristic
     ) async throws -> AsyncCentralNotifications<DarwinCentral> {
-        // enable notifications
-        try await self.setNotification(true, for: characteristic)
-        // central
-        return AsyncCentralNotifications(onTermination: { [unowned self] in
-            Task {
-                // disable notifications
-                do { try await self.setNotification(false, for: characteristic) }
-                catch CentralError.disconnected {
-                    return
+        
+        log?("notify():: MAKING STREAM")
+        let stream = AsyncCentralNotifications<DarwinCentral>(
+            onTermination: { [unowned self] in
+                Task {
+                    // disable notifications
+                    do {
+                        try await self.setNotification(false, for: characteristic)
+                    } catch CentralError.disconnected {
+                        return
+                    } catch {
+                        self.log?("Unable to stop notifications for \(characteristic.uuid). \(error.localizedDescription)")
+                    }
+                    // remove notification stream
+                    self.async { [unowned self] in
+                        let context = self.continuation(for: characteristic.peripheral)
+                        context.notificationStream[characteristic.id] = nil
+                    }
                 }
-                catch {
-                    self.log?("Unable to stop notifications for \(characteristic.uuid). \(error.localizedDescription)")
-                }
-                // remove notification stream
-                self.async { [unowned self] in
-                    let context = self.continuation(for: characteristic.peripheral)
-                    context.notificationStream[characteristic.id] = nil
-                }
-            }
-        }, { continuation in
-            self.async { [unowned self] in
+            }, { continuation in
+                //            self.async { [unowned self] in
                 // store continuation
                 let context = self.continuation(for: characteristic.peripheral)
                 context.notificationStream[characteristic.id] = continuation
+                //            }
             }
-        })
+        )
+        log?("notify():: STREAM CREATED")
+
+        // enable notifications
+        log?("notify():: enable notifications")
+        try await self.setNotification(true, for: characteristic)
+        log?("notify():: enabled notifications RETURNING STREAM")
+        return stream
     }
     
     nonisolated(nonsending)
@@ -432,7 +441,9 @@ public final class DarwinCentral: CentralManager, ObservableObject, @unchecked S
         let context = self.continuation(for: peripheral)
         context.operations.popFirst(where: { filter($0.operation) }) { (queuedOperation, operation) in
             // resume continuation
+            log?("Dequeue:: RESUME continuation \(function) for peripheral \(peripheral)")
             if queuedOperation.isCancelled == false {
+                log?("Dequeue:: RESUME continuation ISCANCELLED == false RESUMING \(function) for peripheral \(peripheral)")
                 operation.continuation.resume(with: result)
             }
         }
@@ -1165,8 +1176,10 @@ internal extension DarwinCentral {
         let options: [String: Any] = [
             CBCentralManagerScanOptionAllowDuplicatesKey: NSNumber(value: operation.filterDuplicates == false)
         ]
-        // reset cache
+        ///DO NOT RESET CACHE here as it messes up the recovered periherals too
+//        // reset cache
         self.cache = Cache()
+        
         // start scanning
         //self.continuation.isScanning.yield(true)
         self.centralManager.scanForPeripherals(
@@ -1591,7 +1604,7 @@ internal extension DarwinCentral {
 //                    assertionFailure("Missing notification stream")
                     return
                 }
-                log("Peripheral \(peripheralObject.id.uuidString) Missing notification stream (\(error))")
+                log("Peripheral \(peripheralObject.id.uuidString) yielding notification stream (\(stream)) with data: \(Array(data))")
 //                assert(error == nil, "Notifications should never fail")
                 stream.yield(data)
             } else {
